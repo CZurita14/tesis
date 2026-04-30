@@ -1,0 +1,150 @@
+#include "HX711.h"        
+#include <WiFi.h>
+#include "Adafruit_MQTT.h"
+#include "Adafruit_MQTT_Client.h"
+
+/************************* Config WiFi *************************/
+#define WIFI_SSID       "NETLIFE-MEDINA"        //  Cambia por tu WiFi
+#define WIFI_PASS       "Ferquinga1984$"    //  Cambia por tu clave WiFi
+
+/************************* Config Adafruit IO *************************/
+#define AIO_SERVER      "io.adafruit.com"  d  |   
+#define AIO_SERVERPORT  1883           // usa 8883 si quieres TLS/SSL
+#define IO_USERNAME  "SPeso03"
+#define IO_KEY       "TU_CLAVE_DE_ADAFRUIT"
+
+// Cliente WiFi
+WiFiClient client;
+// Cliente MQTT
+Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, AIO_USERNAME, AIO_KEY);
+
+// Publicadores para los feeds
+Adafruit_MQTT_Publish feedPesoTotal = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/PESO");
+Adafruit_MQTT_Publish feedSensores = Adafruit_MQTT_Publish(&mqtt, AIO_USERNAME "/feeds/SENSORESVARIOS");
+
+/************************* Config HX711 *************************/
+// Pines para las 5 celdas HX711
+#define DT1 5            
+#define SCK1 12
+#define DT2 13            
+#define SCK2 14
+#define DT3 19            
+#define SCK3 21
+#define DT4 22            
+#define SCK4 23
+#define DT5 35            
+#define SCK5 36
+
+// Factores de escala (debes calibrar cada uno)
+#define SCALE_FACTOR_1 353.f
+#define SCALE_FACTOR_2 353.f
+#define SCALE_FACTOR_3 353.f
+#define SCALE_FACTOR_4 353.f
+#define SCALE_FACTOR_5 353.f
+
+// Objetos para cada celda
+HX711 celda1;
+HX711 celda2;
+HX711 celda3;
+HX711 celda4;
+HX711 celda5;
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Balanza con 5 celdas de carga + MQTT Adafruit IO");
+
+  // Conectar WiFi
+  Serial.print("Conectando a WiFi: ");
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi conectado!");
+
+  // Conectar a MQTT
+  connectMQTT();
+
+  // Inicializar celdas
+  celda1.begin(DT1, SCK1);
+  celda2.begin(DT2, SCK2);
+  celda3.begin(DT3, SCK3);
+  celda4.begin(DT4, SCK4);
+  celda5.begin(DT5, SCK5);
+
+  celda1.set_scale(SCALE_FACTOR_1);
+  celda2.set_scale(SCALE_FACTOR_2);
+  celda3.set_scale(SCALE_FACTOR_3);
+  celda4.set_scale(SCALE_FACTOR_4);
+  celda5.set_scale(SCALE_FACTOR_5);
+
+  Serial.println("Realizando tara... No coloques peso en las celdas.");
+  delay(2000);
+  celda1.tare();
+  celda2.tare();
+  celda3.tare();
+  celda4.tare();
+  celda5.tare();
+
+  Serial.println("Tara completada. Iniciando lecturas...");
+}
+
+void loop() {
+  // Mantener conexión MQTT
+  if (!mqtt.ping(3)) {
+    if (!mqtt.connected())
+      connectMQTT();
+  }
+
+  // Leer celdas
+  float peso1 = celda1.get_units(5);
+  float peso2 = celda2.get_units(5);
+  float peso3 = celda3.get_units(5);
+  float peso4 = celda4.get_units(5);
+  float peso5 = celda5.get_units(5);
+
+  float pesoTotal = peso1 + peso2 + peso3 + peso4 + peso5;
+
+  // Mostrar en Serial
+  Serial.println("Lecturas (gramos):");
+  Serial.printf("C1: %.1f g | C2: %.1f g | C3: %.1f g | C4: %.1f g | C5: %.1f g\n",
+                peso1, peso2, peso3, peso4, peso5);
+  Serial.printf("Peso Total: %.1f g\n", pesoTotal);
+
+  // Publicar al feed PESO (peso total)
+  if (!feedPesoTotal.publish(pesoTotal)) {
+    Serial.println("Error publicando en PESO");
+  } else {
+    Serial.println("Peso total publicado en feed PESO");
+  }
+
+  // Publicar al feed SENSORES VARIOS (JSON con las 5 celdas)
+  char payload[128];
+  snprintf(payload, sizeof(payload),
+           "{\"C1\":%.1f,\"C2\":%.1f,\"C3\":%.1f,\"C4\":%.1f,\"C5\":%.1f}",
+           peso1, peso2, peso3, peso4, peso5);
+
+  if (!feedSensores.publish(payload)) {
+    Serial.println("Error publicando en SENSORES VARIOS");
+  } else {
+    Serial.println("Lecturas individuales publicadas en feed SENSORES VARIOS");
+  }
+
+  Serial.println("--------------------------------------");
+
+  // Esperar antes de la siguiente lectura
+  delay(5000);
+}
+
+/******************** Funciones auxiliares ********************/
+void connectMQTT() {
+  Serial.print("Conectando a Adafruit IO...");
+  int8_t ret;
+  while ((ret = mqtt.connect()) != 0) {
+    Serial.println(mqtt.connectErrorString(ret));
+    Serial.println("Reintentando en 5s...");
+    mqtt.disconnect();
+    delay(5000);
+  }
+  Serial.println("Conectado a Adafruit IO!");
+}

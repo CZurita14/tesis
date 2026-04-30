@@ -1,0 +1,116 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from Adafruit_IO import Client, RequestError
+import os
+from modelo_prediccion import cargar_y_limpiar_datos, integrar_logica_negocio, entrenar_modelo_random_forest
+
+# Configuración de la página del Dashboard
+st.set_page_config(page_title="Dashboard Predictivo de Producción", page_icon="👖", layout="wide")
+
+st.title("👖 Dashboard de Producción y Análisis de Desperdicio Textil")
+st.markdown("Monitoreo en tiempo real (Adafruit IO) y Predicción mediante Machine Learning (Random Forest).")
+
+from dotenv import load_dotenv
+
+# ==========================================
+# 1. CREDENCIALES DE ADAFRUIT IO
+# ==========================================
+# Cargar variables de entorno para mayor seguridad en producción
+load_dotenv()
+ADAFRUIT_IO_USERNAME = os.getenv("ADAFRUIT_IO_USERNAME")
+ADAFRUIT_IO_KEY = os.getenv("ADAFRUIT_IO_KEY")
+
+# Inicializar cliente de Adafruit IO
+try:
+    aio = Client(ADAFRUIT_IO_USERNAME, ADAFRUIT_IO_KEY)
+    conexion_exitosa = True
+except Exception as e:
+    conexion_exitosa = False
+    st.error(f"Error conectando a Adafruit IO: {e}")
+
+# ==========================================
+# 2. SECCIÓN EN TIEMPO REAL (ADAFRUIT IO)
+# ==========================================
+st.header("📡 Monitoreo en Tiempo Real")
+
+if conexion_exitosa:
+    try:
+        # Obtener el último dato del feed "PESO"
+        # Nota: Asegúrate de que tu feed en Adafruit se llama exactamente 'peso'
+        feed_peso = aio.receive('peso')
+        ultimo_peso_real = float(feed_peso.value)
+        
+        # Lógica de Negocio básica para el dato actual
+        PESO_PANTALON = 500  # gramos
+        pantalones_actuales = ultimo_peso_real / PESO_PANTALON
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Último Peso Registrado (g)", f"{ultimo_peso_real:.2f} g")
+        col2.metric("Equivalente en Pantalones", f"{pantalones_actuales:.2f} un")
+        col3.metric("Última Actualización", f"{feed_peso.created_at}")
+        
+    except RequestError as e:
+        st.warning("No se pudo obtener el dato del feed 'PESO' de Adafruit. Verifica que existan datos en la plataforma.")
+        
+st.divider()
+
+# ==========================================
+# 3. SECCIÓN MODELO PREDICTIVO (HISTÓRICO)
+# ==========================================
+st.header("🤖 Análisis Histórico y Predicción (Random Forest)")
+
+@st.cache_data
+def cargar_y_entrenar_modelo(filepath):
+    # Reutilizamos las funciones creadas en tu archivo modelo_prediccion.py
+    df_limpio = cargar_y_limpiar_datos(filepath)
+    df_final = integrar_logica_negocio(df_limpio)
+    
+    # Entrenar el modelo
+    rf_model = entrenar_modelo_random_forest(df_final)
+    return df_final, rf_model
+
+archivo_excel = 'Datos-sensores-entrenamiento.xlsx'
+
+if os.path.exists(archivo_excel):
+    with st.spinner("Entrenando el modelo con datos históricos..."):
+        df_historico, modelo_rf = cargar_y_entrenar_modelo(archivo_excel)
+        
+    st.success("¡Modelo Random Forest entrenado exitosamente con los datos históricos!")
+    
+    # Mostrar métricas del histórico
+    st.subheader("KPIs Históricos")
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Días Analizados", f"{len(df_historico)}")
+    col2.metric("Tela Consumida Estimada Total", f"{df_historico['tela_consumida_m'].sum():.2f} m")
+    col3.metric("Pantalones Totales (Estimado)", f"{df_historico['pantalones_procesados'].sum():.0f} un")
+    col4.metric("Desperdicio Estimado Diario", f"{df_historico['desperdicio_estimado_g'].iloc[0]:.2f} g")
+
+    # Gráficas
+    st.subheader("Visualización del Análisis de Datos")
+    
+    tab1, tab2 = st.tabs(["Serie de Tiempo Histórica", "Distribución del Peso"])
+    
+    with tab1:
+        st.line_chart(df_historico['peso_total_g'])
+        
+    with tab2:
+        fig, ax = plt.subplots(figsize=(8,4))
+        sns.histplot(df_historico['peso_total_g'], bins=30, kde=True, color='purple', ax=ax)
+        st.pyplot(fig)
+        
+    # Zona de predicción
+    st.subheader("🔮 Predicción a Futuro")
+    st.write("Con base en los datos pasados, el modelo prevé lo siguiente para el próximo ciclo de producción:")
+    
+    # Tomamos el último día como referencia para predecir el comportamiento del día siguiente
+    ultimo_dia = df_historico.iloc[-1:]
+    prediccion_futura = modelo_rf.predict(ultimo_dia[['dia_semana', 'dia_mes', 'mes', 'peso_lag_1', 'peso_lag_2', 'peso_lag_3', 'media_movil_3d', 'tela_consumida_m']])
+    
+    st.info(f"**Predicción de Peso Total para el siguiente ciclo:** {prediccion_futura[0]:.2f} gramos")
+    st.write(f"Esto representaría un equivalente de **{(prediccion_futura[0] / 500):.1f} pantalones** producidos.")
+
+else:
+    st.error(f"No se encontró el archivo {archivo_excel}. Por favor verifica que esté en la carpeta.")

@@ -1,0 +1,111 @@
+#include "HX711.h"        
+#include <WiFi.h>
+#include "Adafruit_MQTT.h"
+#include "Adafruit_MQTT_Client.h"
+
+/************************* Config WiFi *************************/
+#define WIFI_SSID       "NETLIFE-MEDINA"        // Cambia por tu WiFi
+#define WIFI_PASS       "Ferquinga1984$"        // Cambia por tu clave WiFi
+
+/************************* Config Adafruit IO *************************/
+#define AIO_SERVER      "io.adafruit.com"
+#define AIO_SERVERPORT  1883           // usa 8883 si quieres TLS/SSL
+#define IO_USERNAME     "SPeso03"
+#define IO_KEY       "TU_CLAVE_DE_ADAFRUIT"
+
+// Cliente WiFi
+WiFiClient client;
+// Cliente MQTT
+Adafruit_MQTT_Client mqtt(&client, AIO_SERVER, AIO_SERVERPORT, IO_USERNAME, IO_KEY);
+
+// Publicador para el feed PESO
+Adafruit_MQTT_Publish feedPesoTotal = Adafruit_MQTT_Publish(&mqtt, IO_USERNAME "/feeds/PESO");
+
+/************************* Config HX711 *************************/
+// Pines para las 2 celdas HX711
+#define DT1 5            
+#define SCK1 12
+#define DT2 13            
+#define SCK2 14
+
+// Factores de escala (ajusta tras calibración)
+#define SCALE_FACTOR_1 353.f
+#define SCALE_FACTOR_2 353.f
+
+// Objetos para cada celda
+HX711 celda1;
+HX711 celda2;
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("Balanza con 2 celdas de carga (10 kg) + MQTT Adafruit IO");
+
+  // Conectar WiFi
+  Serial.print("Conectando a WiFi: ");
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("\nWiFi conectado!");
+
+  // Conectar a MQTT
+  connectMQTT();
+
+  // Inicializar celdas
+  celda1.begin(DT1, SCK1);
+  celda2.begin(DT2, SCK2);
+
+  celda1.set_scale(SCALE_FACTOR_1);
+  celda2.set_scale(SCALE_FACTOR_2);
+
+  Serial.println("Realizando tara... No coloques peso en las celdas.");
+  delay(2000);
+  celda1.tare();
+  celda2.tare();
+
+  Serial.println("Tara completada. Iniciando lecturas...");
+}
+
+void loop() {
+  // Mantener conexión MQTT
+  if (!mqtt.ping(3)) {
+    if (!mqtt.connected())
+      connectMQTT();
+  }
+
+  // Leer ambas celdas
+  float peso1 = celda1.get_units(5);
+  float peso2 = celda2.get_units(5);
+
+  // Calcular el peso total
+  float pesoTotal = peso1 + peso2;
+
+  // Mostrar en Serial
+  Serial.println("Lecturas (gramos):");
+  Serial.printf("C1: %.1f g | C2: %.1f g\n", peso1, peso2);
+  Serial.printf("Peso Total: %.1f g\n", pesoTotal);
+
+  // Publicar solo el peso total al feed PESO
+  if (!feedPesoTotal.publish(pesoTotal)) {
+    Serial.println("Error publicando en feed PESO");
+  } else {
+    Serial.println("Peso total publicado en feed PESO");
+  }
+
+  Serial.println("--------------------------------------");
+  delay(5000);
+}
+
+/******************** Funciones auxiliares ********************/
+void connectMQTT() {
+  Serial.print("Conectando a Adafruit IO...");
+  int8_t ret;
+  while ((ret = mqtt.connect()) != 0) {
+    Serial.println(mqtt.connectErrorString(ret));
+    Serial.println("Reintentando en 5s...");
+    mqtt.disconnect();
+    delay(5000);
+  }
+  Serial.println("Conectado a Adafruit IO!");
+}
