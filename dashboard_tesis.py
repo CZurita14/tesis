@@ -19,9 +19,13 @@ from dotenv import load_dotenv
 # 1. CREDENCIALES DE ADAFRUIT IO
 # ==========================================
 # Cargar variables de entorno para mayor seguridad en producción
-load_dotenv()
-ADAFRUIT_IO_USERNAME = os.getenv("ADAFRUIT_IO_USERNAME")
-ADAFRUIT_IO_KEY = os.getenv("ADAFRUIT_IO_KEY")
+if "ADAFRUIT_IO_USERNAME" in st.secrets:
+    ADAFRUIT_IO_USERNAME = st.secrets["ADAFRUIT_IO_USERNAME"]
+    ADAFRUIT_IO_KEY = st.secrets["ADAFRUIT_IO_KEY"]
+else:
+    load_dotenv()
+    ADAFRUIT_IO_USERNAME = os.getenv("ADAFRUIT_IO_USERNAME")
+    ADAFRUIT_IO_KEY = os.getenv("ADAFRUIT_IO_KEY")
 
 # Inicializar cliente de Adafruit IO
 try:
@@ -35,6 +39,11 @@ except Exception as e:
 # 2. SECCIÓN EN TIEMPO REAL (ADAFRUIT IO)
 # ==========================================
 st.header("📡 Monitoreo en Tiempo Real")
+
+col_btn, _ = st.columns([1, 4])
+if col_btn.button("🔄 Refrescar Datos en Vivo"):
+    # Limpia la cache si fuera necesario, pero el simple botón recargará la página y el feed
+    pass
 
 if conexion_exitosa:
     try:
@@ -91,7 +100,7 @@ if os.path.exists(archivo_excel):
     # Gráficas
     st.subheader("Visualización del Análisis de Datos")
     
-    tab1, tab2 = st.tabs(["Serie de Tiempo Histórica", "Distribución del Peso"])
+    tab1, tab2, tab3 = st.tabs(["Serie de Tiempo Histórica", "Distribución del Peso", "Matriz de Correlación"])
     
     with tab1:
         st.line_chart(df_historico['peso_total_g'])
@@ -101,16 +110,34 @@ if os.path.exists(archivo_excel):
         sns.histplot(df_historico['peso_total_g'], bins=30, kde=True, color='purple', ax=ax)
         st.pyplot(fig)
         
+    with tab3:
+        fig_corr, ax_corr = plt.subplots(figsize=(8,6))
+        cols_corr = ['peso_total_g', 'pantalones_procesados', 'tela_consumida_m', 'desperdicio_estimado_g']
+        # Correlación de variables de negocio
+        matriz_corr = df_historico[cols_corr].corr()
+        sns.heatmap(matriz_corr, annot=True, cmap='coolwarm', fmt=".2f", ax=ax_corr)
+        st.pyplot(fig_corr)
+        
     # Zona de predicción
     st.subheader("🔮 Predicción a Futuro")
     st.write("Con base en los datos pasados, el modelo prevé lo siguiente para el próximo ciclo de producción:")
     
     # Tomamos el último día como referencia para predecir el comportamiento del día siguiente
     ultimo_dia = df_historico.iloc[-1:]
-    prediccion_futura = modelo_rf.predict(ultimo_dia[['dia_semana', 'dia_mes', 'mes', 'peso_lag_1', 'peso_lag_2', 'peso_lag_3', 'media_movil_3d', 'tela_consumida_m']])
+    features_modelo = ['dia_semana', 'dia_mes', 'mes', 'peso_lag_1', 'peso_lag_2', 'peso_lag_3', 'media_movil_3d', 'tela_consumida_m']
+    
+    prediccion_futura = modelo_rf.predict(ultimo_dia[features_modelo])
     
     st.info(f"**Predicción de Peso Total para el siguiente ciclo:** {prediccion_futura[0]:.2f} gramos")
     st.write(f"Esto representaría un equivalente de **{(prediccion_futura[0] / 500):.1f} pantalones** producidos.")
+    
+    st.markdown("### 🌲 Predicciones de Árboles Individuales (Random Forest)")
+    num_arboles = st.slider("Número de árboles a visualizar (Máximo 4):", min_value=1, max_value=4, value=2)
+    
+    for i in range(num_arboles):
+        # Utilizamos .values para evitar warnings de feature names en scikit-learn
+        pred_arbol = modelo_rf.estimators_[i].predict(ultimo_dia[features_modelo].values)[0]
+        st.write(f"- **Árbol {i+1}:** Predice **{pred_arbol:.2f} gramos**")
 
 else:
     st.error(f"No se encontró el archivo {archivo_excel}. Por favor verifica que esté en la carpeta.")
