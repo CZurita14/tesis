@@ -42,8 +42,8 @@ st.header("📡 Monitoreo en Tiempo Real")
 
 col_btn, _ = st.columns([1, 4])
 if col_btn.button("🔄 Refrescar Datos en Vivo"):
-    # Limpia la cache si fuera necesario, pero el simple botón recargará la página y el feed
-    pass
+    # Limpia la cache forzando a reentrenar el modelo y actualizar el feed
+    st.cache_data.clear()
 
 if conexion_exitosa:
     try:
@@ -85,7 +85,7 @@ st.divider()
 st.header("🤖 Análisis Histórico y Predicción (Random Forest)")
 
 @st.cache_data
-def cargar_y_entrenar_modelo(filepath):
+def cargar_y_entrenar_modelo_v2(filepath):
     # Reutilizamos las funciones creadas en tu archivo modelo_prediccion.py
     df_limpio = cargar_y_limpiar_datos(filepath)
     df_final = integrar_logica_negocio(df_limpio)
@@ -98,7 +98,7 @@ archivo_excel = 'Datos-sensores-entrenamiento.xlsx'
 
 if os.path.exists(archivo_excel):
     with st.spinner("Entrenando el modelo con datos históricos..."):
-        df_historico, modelo_rf = cargar_y_entrenar_modelo(archivo_excel)
+        df_historico, modelo_rf = cargar_y_entrenar_modelo_v2(archivo_excel)
         
     st.success("¡Modelo Random Forest entrenado exitosamente con los datos históricos!")
     
