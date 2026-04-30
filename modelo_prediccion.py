@@ -113,8 +113,8 @@ def entrenar_modelo_random_forest(df_procesado):
     print("Entrenando el modelo Predictivo Random Forest...")
     
     # Variables predictoras (X) y variable objetivo (y)
-    # Predeciremos el 'peso_total_g' del día actual basado en los días anteriores
-    features = ['dia_semana', 'dia_mes', 'mes', 'peso_lag_1', 'peso_lag_2', 'peso_lag_3', 'media_movil_3d', 'tela_consumida_m']
+    # Predeciremos el 'peso_total_g' del día actual basado SOLO en el pasado y tiempos
+    features = ['dia_semana', 'dia_mes', 'mes', 'peso_lag_1', 'peso_lag_2', 'peso_lag_3', 'media_movil_3d']
     X = df_procesado[features]
     y = df_procesado['peso_total_g']
     

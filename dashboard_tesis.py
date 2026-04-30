@@ -137,12 +137,18 @@ if os.path.exists(archivo_excel):
     
     # Tomamos el último día como referencia para predecir el comportamiento del día siguiente
     ultimo_dia = df_historico.iloc[-1:]
-    features_modelo = ['dia_semana', 'dia_mes', 'mes', 'peso_lag_1', 'peso_lag_2', 'peso_lag_3', 'media_movil_3d', 'tela_consumida_m']
+    
+    # IMPORTANTE: Eliminamos 'tela_consumida_m' de los features porque causa Data Leakage (trampa).
+    features_modelo = ['dia_semana', 'dia_mes', 'mes', 'peso_lag_1', 'peso_lag_2', 'peso_lag_3', 'media_movil_3d']
     
     prediccion_futura = modelo_rf.predict(ultimo_dia[features_modelo])
     
+    # Calculamos equivalencias DESPUÉS de la predicción, no antes.
+    pantalones_futuros = prediccion_futura[0] / 500
+    tela_futura = pantalones_futuros * 1.20
+    
     st.info(f"**Predicción de Peso Total para el siguiente ciclo:** {prediccion_futura[0]:.2f} gramos")
-    st.write(f"Esto representaría un equivalente de **{(prediccion_futura[0] / 500):.1f} pantalones** producidos.")
+    st.write(f"Esto representaría un equivalente de **{pantalones_futuros:.1f} pantalones** producidos y **{tela_futura:.2f} metros** de tela consumida.")
     
     st.markdown("---")
     st.markdown("### 🌲 ¿Cómo funciona el 'Bosque Aleatorio' (Random Forest)?")
