@@ -47,9 +47,21 @@ if col_btn.button("🔄 Refrescar Datos en Vivo"):
 
 if conexion_exitosa:
     try:
-        # Obtener el último dato del feed "PESO"
-        # Nota: Asegúrate de que tu feed en Adafruit se llama exactamente 'peso'
-        feed_peso = aio.receive('peso')
+        # Obtener lista de feeds disponibles
+        feeds_disponibles = aio.feeds()
+        nombres_feeds = [f.key for f in feeds_disponibles]
+        
+        # Intentar encontrar el feed correcto (peso, peso-1, o el primero que contenga 'peso')
+        llave_feed = 'peso'
+        if 'peso' not in nombres_feeds:
+            coincidencias = [f for f in nombres_feeds if 'peso' in f.lower()]
+            if coincidencias:
+                llave_feed = coincidencias[0]
+            elif len(nombres_feeds) > 0:
+                # Si no hay nada con 'peso', tomar el primer feed disponible como fallback
+                llave_feed = nombres_feeds[0]
+        
+        feed_peso = aio.receive(llave_feed)
         ultimo_peso_real = float(feed_peso.value)
         
         # Lógica de Negocio básica para el dato actual
@@ -60,9 +72,10 @@ if conexion_exitosa:
         col1.metric("Último Peso Registrado (g)", f"{ultimo_peso_real:.2f} g")
         col2.metric("Equivalente en Pantalones", f"{pantalones_actuales:.2f} un")
         col3.metric("Última Actualización", f"{feed_peso.created_at}")
+        st.caption(f"Leyendo desde el feed de Adafruit: '{llave_feed}'")
         
     except RequestError as e:
-        st.warning("No se pudo obtener el dato del feed 'PESO' de Adafruit. Verifica que existan datos en la plataforma.")
+        st.warning(f"No se pudo obtener datos. Feeds disponibles en tu cuenta: {nombres_feeds if 'nombres_feeds' in locals() else 'Ninguno'}. Verifica tu configuración.")
         
 st.divider()
 
@@ -131,13 +144,19 @@ if os.path.exists(archivo_excel):
     st.info(f"**Predicción de Peso Total para el siguiente ciclo:** {prediccion_futura[0]:.2f} gramos")
     st.write(f"Esto representaría un equivalente de **{(prediccion_futura[0] / 500):.1f} pantalones** producidos.")
     
-    st.markdown("### 🌲 Predicciones de Árboles Individuales (Random Forest)")
-    num_arboles = st.slider("Número de árboles a visualizar (Máximo 4):", min_value=1, max_value=4, value=2)
+    st.markdown("---")
+    st.markdown("### 🌲 ¿Cómo funciona el 'Bosque Aleatorio' (Random Forest)?")
+    st.write("Un *Random Forest* está compuesto por múltiples 'Árboles de Decisión'. Cada árbol observa una parte diferente de los datos históricos y genera su propio cálculo o 'voto'. Al final, el 'Bosque' promedia todos estos árboles para entregar una predicción mucho más robusta y evitar errores de picos extraños (0.00 o valores disparados).")
     
+    num_arboles = st.slider("Selecciona cuántos árboles individuales quieres observar por dentro (Máximo 4):", min_value=1, max_value=4, value=2)
+    
+    st.write("**Cálculos internos de los árboles seleccionados:**")
     for i in range(num_arboles):
         # Utilizamos .values para evitar warnings de feature names en scikit-learn
         pred_arbol = modelo_rf.estimators_[i].predict(ultimo_dia[features_modelo].values)[0]
-        st.write(f"- **Árbol {i+1}:** Predice **{pred_arbol:.2f} gramos**")
+        st.info(f"🌳 **Árbol {i+1}:** Analizó su parte de los datos y calculó **{pred_arbol:.2f} gramos**")
+        
+    st.success(f"💡 **Conclusión del Bosque:** Promediando los votos de TODOS los árboles entrenados, el modelo final dictamina la predicción de **{prediccion_futura[0]:.2f} gramos**.")
 
 else:
     st.error(f"No se encontró el archivo {archivo_excel}. Por favor verifica que esté en la carpeta.")
