@@ -64,6 +64,9 @@ if conexion_exitosa:
         feed_peso = aio.receive(llave_feed)
         ultimo_peso_real = float(feed_peso.value)
         
+        # Obtener los últimos datos en tiempo real (historial reciente)
+        datos_recientes = aio.data(llave_feed)
+        
         # Lógica de Negocio básica para el dato actual
         PESO_PANTALON = 500  # gramos
         pantalones_actuales = ultimo_peso_real / PESO_PANTALON
@@ -73,6 +76,17 @@ if conexion_exitosa:
         col2.metric("Equivalente en Pantalones", f"{pantalones_actuales:.2f} un")
         col3.metric("Última Actualización", f"{feed_peso.created_at}")
         st.caption(f"Leyendo desde el feed de Adafruit: '{llave_feed}'")
+        
+        # Visualización gráfica de los datos en tiempo real de Adafruit
+        if datos_recientes:
+            st.markdown("### 📈 Gráfica de Sensores en Tiempo Real")
+            valores_rt = [float(d.value) for d in datos_recientes]
+            fechas_rt = [pd.to_datetime(d.created_at) for d in datos_recientes]
+            
+            df_rt = pd.DataFrame({'Peso (g)': valores_rt}, index=fechas_rt)
+            # Ordenar cronológicamente
+            df_rt = df_rt.sort_index()
+            st.line_chart(df_rt)
         
     except RequestError as e:
         st.warning(f"No se pudo obtener datos. Feeds disponibles en tu cuenta: {nombres_feeds if 'nombres_feeds' in locals() else 'Ninguno'}. Verifica tu configuración.")
